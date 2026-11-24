@@ -119,7 +119,6 @@ kb_name() {
 	fi
 }
 
-# WARNING: AI GENERATED
 keyboard_reader() {
 	local seq name
 
