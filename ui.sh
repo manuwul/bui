@@ -141,6 +141,7 @@ ticker() {
 	local nofd
 	exec {nofd}<> <(:)
 
+	printf "TICK\n"
 	while true; do
 		IFS= read -r -t "$t" -u "$nofd"
 		if (( $? <= 128 )); then
@@ -201,7 +202,7 @@ CURRENT_SCREEN=""
 declare -A SCREENS=()
 SCREEN_HISTORY=()
 SHOULD_EXIT=false
-DIRTY=false
+DIRTY=true
 # === GLOBAL STATE ===
 
 
