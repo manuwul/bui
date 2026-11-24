@@ -167,6 +167,8 @@ SCREEN_CLEAR_LINE="${ESC}[2K"
 CURSOR_HOME="${ESC}[H"
 ALT_SCREEN_ENTER="${ESC}[?1049h"
 ALT_SCREEN_EXIT="${ESC}[?1049l"
+WRAP_OFF="${ESC}[?7l"
+WRAP_ON="${ESC}[?7h"
 
 RESET="${ESC}[0m"
 BOLD="${ESC}[1m"
@@ -209,6 +211,7 @@ DIRTY=true
 init_terminal() {
 	shopt -s checkwinsize
 	printf "%b%b" "${ALT_SCREEN_ENTER}" "${CURSOR_HIDE}"
+	printf "%b" "${WRAP_OFF}"
 	trap "cleanup; at_exit" EXIT
 	trap 'exit 130' INT
 	trap 'exit 143' TERM
@@ -218,6 +221,7 @@ init_terminal() {
 
 cleanup() {
 	printf "%b%b" "${CURSOR_SHOW}" "${ALT_SCREEN_EXIT}"
+	printf "%b" "${WRAP_ON}"
 }
 
 at_exit() {
@@ -262,3 +266,108 @@ goto_screen() {
 	DIRTY=true
 }
 # === NAVIGATION ===
+
+# === DRAWING ===
+# _on_screen <row> <col>
+_on_screen() {
+	(( $1 >= 1 && $2 >= 1 && (LINES < 1 || $1 <= LINES) && (COLUMNS < 1 || $2 <= COLUMNS) ))
+}
+
+# fit_text <var> <text> <width>
+fit_text() {
+	if (( $3 <= 0 )); then printf -v "$1" ''; return 0; fi
+	local _ft_s=${2:0:$3} _ft_pad
+	printf -v _ft_pad '%*s' $(( $3 - ${#_ft_s} )) ''
+	printf -v "$1" '%s%s' "$_ft_s" "$_ft_pad"
+}
+
+# repeat_char <var> <char> <count>
+repeat_char() {
+	if (( $3 <= 0 )); then printf -v "$1" ''; return 0; fi
+	printf -v "$1" '%*s' "$3" ''
+	printf -v "$1" '%s' "${!1// /"$2"}"
+}
+
+# draw_text <row> <col> <width> <text> [style]
+draw_text() {
+	_on_screen "$1" "$2" || return 0
+	local s
+	fit_text s "$4" "$3"
+	printf '\e[%d;%dH%s%s%s' "$1" "$2" "${5-}" "$s" "$RESET"
+}
+
+# draw_centered <row> <text> [style]
+draw_centered() {
+	local w=${#2} col
+	(( COLUMNS > 0 && w > COLUMNS )) && w=$COLUMNS
+	col=$(( (COLUMNS - w) / 2 + 1 ))
+	(( col < 1 )) && col=1
+	draw_text "$1" "$col" "$w" "$2" "${3-}"
+}
+
+# draw_fill <row> <col> <w> <h> [style]: залить прямоугольник пробелами
+draw_fill() {
+	local row=$1 col=$2 w=$3 h=$4 pad out='' i
+	(( w > 0 && h > 0 )) || return 0
+	printf -v pad '%*s' "$w" ''
+	for (( i=0; i<h; i++ )); do
+		_on_screen $(( row + i )) "$col" || continue
+		out+=$'\e'"[$(( row + i ));${col}H${pad}"
+	done
+	printf '%s%s%s' "${5-}" "$out" "$RESET"
+}
+
+declare -A BOX_CHARS=(
+	[ASCII]='++++-|'
+	[SINGLE]='┌┐└┘─│'
+	[DOUBLE]='╔╗╚╝═║'
+	[ROUND]='╭╮╰╯─│'
+)
+BOX_STYLE=SINGLE
+
+# draw_hline <row> <col> <width> [char] [style]
+draw_hline() {
+	_on_screen "$1" "$2" || return 0
+	local line set=${BOX_CHARS[$BOX_STYLE]:-${BOX_CHARS[SINGLE]}}
+	repeat_char line "${4:-${set:4:1}}" "$3"
+	printf '\e[%d;%dH%s%s%s' "$1" "$2" "${5-}" "$line" "$RESET"
+}
+
+# draw_box <row> <col> <w> <h> [title] [style] [border: ASCII|SINGLE|DOUBLE|ROUND]
+draw_box() {
+	local row=$1 col=$2 w=$3 h=$4 title=${5-} style=${6-}
+	(( w >= 2 && h >= 2 )) || return 0
+
+	local set=${BOX_CHARS[${7:-$BOX_STYLE}]:-${BOX_CHARS[SINGLE]}}
+	local tl=${set:0:1} tr=${set:1:1} bl=${set:2:1} br=${set:3:1}
+	local hz=${set:4:1} vt=${set:5:1}
+	local inner=$(( w - 2 )) right=$(( col + w - 1 )) bottom=$(( row + h - 1 ))
+	local e=$'\e' bar out='' i
+
+	if _on_screen "$row" "$col"; then
+		if [[ -n $title ]] && (( inner >= 4 )); then
+			title=${title:0:inner-3}
+			repeat_char bar "$hz" $(( inner - ${#title} - 3 ))
+			out+="${e}[${row};${col}H${tl}${hz} ${title} ${bar}${tr}"
+		else
+			repeat_char bar "$hz" "$inner"
+			out+="${e}[${row};${col}H${tl}${bar}${tr}"
+		fi
+	fi
+
+	for (( i=1; i<h-1; i++ )); do
+		_on_screen $(( row + i )) "$col" || continue
+		out+="${e}[$(( row + i ));${col}H${vt}${e}[$(( row + i ));${right}H${vt}"
+	done
+
+	if _on_screen "$bottom" "$col"; then
+		repeat_char bar "$hz" "$inner"
+		out+="${e}[${bottom};${col}H${bl}${bar}${br}"
+	fi
+
+	printf '%s%s%s' "$style" "$out" "$RESET"
+}
+
+drawing_begin() { printf '\e[?2026h'; }
+drawing_end()   { printf '\e[?2026l'; }
+# === DRAWING ===

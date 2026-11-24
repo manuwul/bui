@@ -28,8 +28,12 @@ screen_main_menu() {
 	esac
 
 	if $DIRTY; then
+		drawing_begin
+		
 		clear_screen
-		printf "=== MAIN MENU (%sx%s) ===" "$LINES" "$COLUMNS"
+		draw_box 1 1 $COLUMNS $LINES "main menu" "" "ROUND"
+		
+		drawing_end
 		DIRTY=false
 	fi
 }
@@ -45,8 +49,7 @@ main() {
 		case "$line" in
 			TICK)    ${SCREENS["$CURRENT_SCREEN"]} "" ;;
 			KEY:*)   ${SCREENS["$CURRENT_SCREEN"]} "$line" ;;
-			ERROR:*) printf "%s\n" "$line" >&2; exit 1 ;;
-			OFF:*)   printf "%s\n" "$line" >&2; exit 1 ;;
+			OFF:*|ERROR:*)   SHOULD_EXIT=true ;;
 		esac
 	done;
 }
